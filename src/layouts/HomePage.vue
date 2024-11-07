@@ -15,8 +15,8 @@
         <button @click="openModal" class="signup-button">Get Started</button>
       </div>
       <div class="image-container">
-        <img src="../assets/3.jpg" alt="Note Taking Illustration" class="illustration" />
-        <img src="../assets/5.jpg" alt="Another Illustration" class="small-image" />
+        <img :src="image1" alt="Note Taking Illustration" class="illustration" />
+        <img :src="image2" alt="Another Illustration" class="small-image" />
       </div>
     </div>
   </div>
@@ -25,6 +25,8 @@
 <script>
 import HeaderL from '../components/header.vue';
 import AuthModal from '../components/AuthModal.vue';
+import image1 from '../assets/3.jpg';
+import image2 from '../assets/5.jpg';
 
 export default {
   components: {
@@ -35,6 +37,8 @@ export default {
     return {
       isModalVisible: false,
       isSignIn: true,
+      image1,
+      image2,
     };
   },
   methods: {
