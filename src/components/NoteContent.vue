@@ -2,111 +2,217 @@
   <div class="main-container">
     <div class="note-container">
       <div class="note-header">
-        <h1 class="note-title">{{ noteTitle }}</h1>
-        <div class="settings-dropdown">
-          <button @click="toggleSettingsMenu" class="settings-button">
-            <i class="fas fa-cog"></i> 
+        <div class="folder-selector">
+          <i class="icon fas fa-folder"></i>
+          <select v-model="selectedFolderId" class="folder-dropdown">
+            <option value="" disabled selected>Folder</option>
+            <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option>
+          </select>
+        </div>
+
+        <input v-model="note.title" placeholder="" class="note-title-input" />
+        <p class="note-date">{{ formattedDate }}</p>
+
+        <div class="settings-wrapper">
+          <button 
+            @click="toggleTranscription" 
+            class="transcription-button" 
+            :class="{ 'recording': isTranscribing }">
+            <i :class="isTranscribing ? 'fas fa-stop' : 'fas fa-microphone'" 
+               :style="{ color: isTranscribing ? 'red' : 'lightgreen' }"></i>
+            {{ isTranscribing ? 'Stop' : 'Transcribe' }}
           </button>
-          <div v-if="isSettingsMenuOpen" class="settings-menu">
-            <button @click="lockNote" class="settings-option">
-              <i class="fas fa-lock"></i> Lock Note
-            </button>
-            <button @click="archiveNote" class="settings-option">
-              <i class="icon fas fa-archive"></i> Archive Note
-            </button>
-            <button @click="shareNote" class="settings-option">
-              <i class="fas fa-envelope"></i> Share via Email
-            </button>
-            <button @click="exportNote" class="settings-option">
-              <i class="fas fa-file-export"></i> Export as PDF
-            </button>
-            <button @click="deleteNote" class="settings-option delete-option">
-              <i class="fas fa-trash-alt"></i> Delete
-            </button>
+          <div class="language-selector">
+            <select v-model="selectedLanguage" id="language" class="language-dropdown">
+              <option value="en-US">in English</option>
+              <option value="sq-AL">in Albanian</option>
+            </select>
           </div>
+          <SettingsDropdown 
+            :noteId="noteId"
+            :isSettingsMenuOpen="isSettingsMenuOpen"
+            @toggle-settings="toggleSettingsMenu"
+            @lock-note="lockNote"
+            @share-note="shareNote"
+            @archive-note="archiveNote"
+            @export-note="exportNote"
+            @delete-note="deleteNote"
+          />
         </div>
       </div>
 
       <textarea 
-        v-model="noteText" 
-        placeholder="Type your notes here..." 
+        v-model="note.content"
+        placeholder="..." 
         class="note-textarea"
       ></textarea>
 
-      
+      <button
+        @click="noteId ? handleUpdateNote() : handleCreateNote()"
+        :class="{'save-note': !noteId, 'save-changes': noteId}"
+        class="save-button"
+      >
+        {{ noteId ? 'Save Changes' : 'Save Note' }}
+      </button>
 
-      <div class="transcription-settings">
-        <button @click="toggleTranscription" 
-                class="transcription-button" 
-                :class="{ 'recording': isTranscribing }">
-          <i :class="isTranscribing ? 'fas fa-stop' : 'fas fa-microphone'" aria-hidden="true"></i>
-          {{ isTranscribing ? 'End Note Taking' : 'Take Notes' }}
-        </button>
-        <div class="language-selector">
-          <select v-model="selectedLanguage" id="language" class="language-dropdown">
-            <option value="en">English</option>
-            <option value="sq">Albanian</option>  
-          </select>
-        </div>
-      </div>
-
-      <button @click="saveNote" class="save-button">Save Note</button>
     </div>
-  </div>
 
-  <div v-if="isLockModalOpen" class="modal-overlay" @click="closeLockModal">
-    <div class="modal-content" @click.stop>
-      <h2>Lock Note</h2>
-      <input v-model="lockPassword" type="password" placeholder="Enter Password" class="modal-input"/>
-      <input v-model="confirmLockPassword" type="password" placeholder="Confirm Password" class="modal-input"/>
-      <button @click="lockNoteAction" class="modal-button lock-button">Lock Note</button>
-      <button @click="closeLockModal" class="modal-button cancel-button">Cancel</button>
-    </div>
-  </div>
-
-  <div v-if="isShareModalOpen" class="modal-overlay" @click="closeShareModal">
-    <div class="modal-content" @click.stop>
-      <h2>Share Note</h2>
-      <input v-model="email" type="email" placeholder="Enter Email" class="modal-input"/>
-      <button @click="shareNoteAction" class="modal-button share-button">Share Note</button>
-      <button @click="closeShareModal" class="modal-button cancel-button">Cancel</button>
-    </div>
+    <LockNoteModal 
+      :isOpen="isLockModalOpen" 
+      :noteId="noteId" 
+      :lockPassword="lockPassword"
+      :confirmLockPassword="confirmLockPassword"
+      @close="closeLockModal"
+      @lock-note="lockNoteAction"
+    />
+    <ShareNoteModal 
+      :isOpen="isShareModalOpen" 
+      :noteId="noteId"  
+      :userId="userId"  
+      @close="closeShareModal"
+      @share-note="shareNoteAction"
+    />
   </div>
 </template>
-
 <script>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import { useStore } from 'vuex';
+import LockNoteModal from './LockNote.vue';
+import ShareNoteModal from './ShareNote.vue';
+import SettingsDropdown from './SettingsDropdown.vue';
+import * as signalR from '@microsoft/signalr';
+import { mapGetters } from 'vuex';
+import { getUserIdFromToken } from '@/utils/authUtils';
 
 export default {
+  components: {
+    LockNoteModal,
+    ShareNoteModal,
+    SettingsDropdown,
+  },
+  computed: {
+    ...mapGetters('transcription', ['isTranscribing', 'error']),
+  },
   setup() {
+    const store = useStore();
     const route = useRoute();
-    const noteText = ref('');
-    const noteTitle = ref('');
-    const selectedLanguage = ref('en');
+
+    const selectedLanguage = ref('');
     const isTranscribing = ref(false);
     const isSettingsMenuOpen = ref(false);
     const isLockModalOpen = ref(false);
     const isShareModalOpen = ref(false);
-    const lockPassword = ref('');
-    const confirmLockPassword = ref('');
-    const email = ref('');
+    const noteId = ref(route.params.id);
+    const userId=getUserIdFromToken();
+    const note = ref({ title: '', content: '', createdAt: '', folderId: '' });
+    const selectedFolderId = ref('');
+    const folders = ref([]);
 
-    onMounted(() => {
-      noteTitle.value = route.query.title || '';
-    });
+    const setupSignalRConnection = async () => {
+      const connection = new signalR.HubConnectionBuilder()
+        .withUrl("http://localhost:5207/hubs/transcription")
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
 
-    const toggleTranscription = () => {
-      isTranscribing.value = !isTranscribing.value;
-      if (isTranscribing.value) {
-        console.log("Transcription started in", selectedLanguage.value);
-      } else {
-        console.log("Transcription stopped.");
+      try {
+        await connection.start();
+        console.log("SignalR connected.");
+
+        connection.on("ReceiveTranscription", (transcription) => {
+          note.value.content += transcription + " ";
+        });
+      } catch (error) {
+        console.error("SignalR connection failed:", error);
       }
     };
 
-    const saveNote = () => {
-      console.log("Note saved:", noteTitle.value, noteText.value);
+    const toggleTranscription = async () => {
+      isTranscribing.value = !isTranscribing.value;
+
+      if (isTranscribing.value) {
+        try {
+          await store.dispatch('transcription/beginTranscription', selectedLanguage.value);
+          console.log('Transcription started.', selectedLanguage.value);
+        } catch (error) {
+          console.error('Error starting transcription:', error);
+        }
+      } else {
+        try {
+          await store.dispatch('transcription/endTranscription');
+          console.log('Transcription stopped.');
+        } catch (error) {
+          console.error('Error stopping transcription:', error);
+        }
+      }
+    };
+
+    const fetchFolders = async () => {
+      try {
+        const userId=getUserIdFromToken()
+        const fetchedFolders = await store.dispatch('folder/fetchFoldersByUserId', userId);
+        folders.value = fetchedFolders;
+      } catch (error) {
+        console.error('Failed to fetch folders:', error);
+      }
+    };
+
+    const fetchNote = async () => {
+      if (noteId.value) {
+        try {
+          const fetchedNote = await store.dispatch('note/fetchNoteById', noteId.value);
+          note.value = fetchedNote;
+          selectedFolderId.value = fetchedNote.folderId;
+        } catch (error) {
+          console.error('Failed to fetch note:', error);
+        }
+      }
+    };
+
+
+    const handleUpdateNote = async () => {
+      const updatedNoteData = {
+        noteId:noteId.value,
+        title: note.value.title,
+        content: note.value.content,
+        folderId: selectedFolderId.value,
+
+      };
+
+      try {
+        await store.dispatch('note/updateNoteAsync', {
+          noteId: noteId.value,
+          updatedNoteData,
+        });
+        console.log('Note updated successfully.');
+      } catch (error) {
+        console.error('Error updating note:', error);
+      }
+    };
+
+    const handleCreateNote = async () => {
+      const currentDate = new Date().toISOString();
+      const userId = getUserIdFromToken();
+      const noteData = {
+          title: note.value.title,
+          content: note.value.content,
+          createdAt: currentDate,
+          updatedAt: currentDate,
+          userId: userId,
+          folderId: selectedFolderId.value,
+          isArchived: false,
+        };
+      console.log(noteData,userId)
+
+      try {
+        await store.dispatch('note/createNote', {
+          noteData,
+          userId,
+        });
+        console.log('Note created successfully.');
+      } catch (error) {
+        console.error('Error creating note:', error);
+      }
     };
 
     const toggleSettingsMenu = () => {
@@ -117,13 +223,8 @@ export default {
       isLockModalOpen.value = true;
     };
 
-    const lockNoteAction = () => {
-      if (lockPassword.value === confirmLockPassword.value) {
-        console.log("Note locked with password:", lockPassword.value);
-        isLockModalOpen.value = false;
-      } else {
-        alert("Passwords do not match.");
-      }
+    const archiveNote = () => {
+      store.dispatch('note/archiveNoteAsync', noteId.value); 
     };
 
     const closeLockModal = () => {
@@ -135,7 +236,6 @@ export default {
     };
 
     const shareNoteAction = () => {
-      console.log("Note shared with email:", email.value);
       isShareModalOpen.value = false;
     };
 
@@ -143,48 +243,63 @@ export default {
       isShareModalOpen.value = false;
     };
 
-    const exportNote = () => {
-      console.log("Note exported as PDF");
-    };
+    onMounted(() => {
+      fetchFolders();
+      fetchNote();
+      setupSignalRConnection();
+    });
 
-    const deleteNote = () => {
-      console.log("Note deleted");
-    };
+    watch(() => route.params.id, (newId) => {
+      noteId.value = newId;
+      fetchNote();
+    });
+
+    const formattedDate = computed(() => {
+      const date = note.value.createdAt ? new Date(note.value.createdAt) : new Date();
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    });
 
     return {
-      noteText,
-      noteTitle,
       selectedLanguage,
       isTranscribing,
       isSettingsMenuOpen,
       isLockModalOpen,
       isShareModalOpen,
-      lockPassword,
-      confirmLockPassword,
-      email,
+      note,
+      selectedFolderId,
+      folders,
+      noteId,
+      userId,
+      formattedDate,
       toggleTranscription,
-      saveNote,
-      toggleSettingsMenu,
+      fetchFolders,
+      fetchNote,
+      handleUpdateNote,
+      handleCreateNote,
       lockNote,
-      shareNote,
-      exportNote,
-      deleteNote,
-      lockNoteAction,
-      shareNoteAction,
       closeLockModal,
-      closeShareModal
+      closeShareModal,
+      shareNoteAction,
+      shareNote,
+      toggleSettingsMenu,
+      archiveNote
     };
   },
 };
 </script>
+
 
 <style scoped>
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Arial', sans-serif;
-  background-color: #121212;
+  /* font-family: 'Arial', sans-serif; */
+  background-color: rgba(17, 17, 17, 255);
 }
 
 .main-container {
@@ -193,6 +308,31 @@ html, body {
   height: 100vh;
   padding: 20px;
 }
+.folder-selector {
+  margin-top:-3%;
+  margin-bottom:3%;
+  margin-left:4%;
+  position: relative;
+  z-index: 5; 
+}
+
+.folder-dropdown {
+  padding: 8px;
+  border-radius: 5px;
+  border: none;
+  background-color: transparent;
+  color: white;
+  width: 200px;
+  z-index: 10; 
+  position: relative; 
+}
+
+.folder-dropdown option {
+  background-color: rgba(17, 17, 17, 255);
+  color: white; 
+
+}
+
 
 .note-container {
   flex: 1;
@@ -205,198 +345,139 @@ html, body {
 
 .note-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.note-title {
-  font-size: 24px;
-  color: white;
-  margin-bottom: 15px;
-  margin-left:5%;
-}
-
-.settings-dropdown {
-  position: relative;
-}
-
-.settings-button {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.settings-menu {
-  position: absolute;
-  top: 30px;
-  right: 0;
-  background-color: #333;
-  border-radius: 5px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  padding: 10px;
-  display: flex;
   flex-direction: column;
-  width: 220px;
-}
-
-.settings-option {
-  background: none;
-  color: white;
-  border: none;
-  padding: 12px 15px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.3s;
+  justify-content: flex-start;
+  align-items: flex-start;
+  position: relative;
   width: 100%;
 }
 
-.settings-option:hover {
-  background-color: #444;
+.settings-wrapper {
+  position: absolute; 
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 30px; 
+  z-index: 8;   
+
+
+}
+
+.note-title-input {
+  width: 25%;
+  padding: 8px;
+  font-size: 20px;
+  margin-left:5%;
+  color: white;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid white;
+  text-align: left;
+}
+
+.note-title-input::placeholder {
+  color: grey;
+}
+.note-title-input:focus{
+  outline:none;
+  border-bottom:1px solid white;
+}
+.folder-dropdown:focus{
+  outline:none;
+  border-bottom:none;
+}
+
+.note-date {
+  font-size: 14px;
+  color: #aaa;
+  margin-top: 1%;
+  margin-left:5%;
 }
 
 .note-textarea {
   margin-top: 3%;
-  margin-left: 3%;
   width: 90%;
   height: 50%;
   padding: 1rem;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  resize: none;
+  border: none;
   background-color: rgba(17, 17, 17, 255);
   color: white;
   font-size: 16px;
+  resize: none;
 }
 
-.transcription-settings {
-  display: flex;
-  align-items: center;
-  margin-top: 10px;
+.note-textarea:focus{
+  outline:none;
+  border-bottom:none;
 }
-
-.language-selector {
-  margin-left: 10px;
+.icon {
+  margin-right: 10px;
+  color: white;
 }
 
 .language-dropdown {
   padding: 5px;
   border-radius: 5px;
-  border: 1px solid #ccc;
-  background-color: #fff;
-  color: #333;
-}
+  border: none;
+  background-color: transparent;
+  color: white;
+  z-index: 10; 
 
-.delete-option {
-  color: rgb(212, 83, 83); 
+}
+.language-dropdown option{
+  background-color: rgba(17, 17, 17, 255) ;
 }
 
 .transcription-button {
   padding: 10px;
   border: none;
   border-radius: 5px;
+  /* font-size:15px; */
   color: white;
   font-weight: 500;
   cursor: pointer;
-  background-color: #28a745;
-  width: 13%;
-  margin-left: 5%;
+  background-color: transparent;
+  border: none;
+  width:120px;
+
 }
 
-.transcription-button.recording {
-  background-color: #dc3545;
-}
-
-.transcription-button:hover {
-  background-color: #218838;
-}
-
-.transcription-button.recording:hover {
-  background-color: #c82333;
-}
 
 .transcription-button .fa {
   font-size: 24px;
 }
 
+.transcription-button:hover {
+  background-color: transparent;
+}
+
+.transcription-button.recording:hover {
+  background-color: transparent;
+}
+.save-note {
+  background-color: rgb(75, 165, 75);
+}
+
+.save-changes {
+  background-color: #40a0ff;
+}
+
+
 .save-button {
   position: absolute;
   bottom: 20%;
-  margin-left: 39%;
   transform: translateX(-50%);
   padding: 12px 24px;
-  background-color: #007bff;
   color: white;
   border: none;
   border-radius: 5px;
   cursor: pointer;
+  width:15%;
 }
 
 .save-button:hover {
-  background-color: #0056b3;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.modal-content {
-  background-color: #fff;
-  padding: 20px;
-  border-radius: 10px;
-  width: 400px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-}
-
-.modal-input {
-  width: 86%;
-  padding: 10px;
-  margin: 10px 0;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-}
-
-.modal-button {
-  width: 90%;
-  padding: 10px;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  margin:2%;
-}
-
-.modal-button.lock-button {
-  background-color: #000;
-}
-
-.modal-button.share-button {
-  background-color: #000;
-}
-
-.modal-button.cancel-button {
-  background-color: #4f4f51;
-}
-
-.modal-button:hover {
-  background-color: #218838;
-}
-
-.modal-button.lock-button:hover,
-.modal-button.share-button:hover {
-  background-color: #7c848d;
-}
-
-.modal-button.cancel-button:hover {
-  background-color: #333;
+  background-color: #40a0ff;
 }
 </style>

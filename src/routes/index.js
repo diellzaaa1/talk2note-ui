@@ -6,7 +6,7 @@ import NoteToDo from '@/layouts/NoteToDo.vue';
 import AllNotes from '@/layouts/AllNotes.vue';
 import ArchivedNotes from '@/layouts/ArchivedNotes.vue';
 import LockedNotes from '@/layouts/LockedNotes.vue';
-
+import { authorizeMiddleware } from '@/utils/authUtils';
 const routes = [
   {
     path: '/',
@@ -17,12 +17,15 @@ const routes = [
     path: '/main',
     name: 'MainPage',
     component: MainPage,
+    redirect: '/main/allNotes',
+    meta: { requiresAuth: true } , 
     children: [
       {
-        path: 'note', 
+        path: 'note/:id?', 
         name: 'NoteCreation',
         component: NoteCreation,
-      },
+      }
+,      
       {
         path: 'noteToDo',
         name: 'NoteToDo',
@@ -55,5 +58,7 @@ const router = createRouter({
   history: createWebHistory(), 
   routes,
 });
+
+router.beforeEach(authorizeMiddleware)
 
 export default router;

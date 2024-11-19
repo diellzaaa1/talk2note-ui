@@ -25,8 +25,8 @@
             <div class="input-group">
               <input
                 type="text"
-                v-model="username"
-                placeholder="Username"
+                v-model="name"
+                placeholder="Full Name"
                 required
               />
             </div>
@@ -50,14 +50,19 @@
         </button>
         
         <p @click="toggleMode" class="toggle-mode">
-          {{ isSignIn ? 'Don’t have an account? Sign Up' : 'Already have an account? Sign In' }}
-        </p>
+        {{ isSignIn ? 'Don’t have an account? Sign Up' : 'Already have an account? Sign In' }}
+      </p>
+
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import { mapActions } from 'vuex';
+import Cookies from 'js-cookie'; 
+
+
 export default {
   props: {
     visible: Boolean,
@@ -67,54 +72,85 @@ export default {
     return {
       email: '',
       password: '',
-      username: '',
+      name: '',
       confirmPassword: '',
     };
   },
   methods: {
+    ...mapActions({
+      registerUser: 'user/registerUser',  
+      loginUser: 'user/loginUser',      
+    }),
     closeModal() {
       this.$emit('close-modal');
       this.resetForm();
     },
     toggleMode() {
-      this.$emit('toggle-mode');
-      this.resetForm();
-    },
+  console.log('Toggling mode...');
+  this.$emit('toggle-mode');
+  this.resetForm();
+}
+,
     resetForm() {
       this.email = '';
       this.password = '';
       this.username = '';
       this.confirmPassword = '';
     },
-    handleSubmit() {
+    async handleSubmit() {
       if (this.isSignIn) {
-        this.signIn();
+        await this.signIn();
       } else {
-        this.signUp();
+        await this.signUp();
+      }
+    }
+    ,
+    async signIn() {
+      try {
+        const loginData = {
+          email: this.email,
+          password: this.password,
+        };
+        const token = await this.loginUser(loginData);
+        if (token) {
+      Cookies.set("authToken", token, { expires: 1 });
+
+      this.$router.push({ name: 'MainPage' });
+    } else {
+      console.error("Login failed");
+    }        
+      
+      
+      } catch (error) {
+        console.error('Sign In Error:', error);
       }
     },
-    signIn() {
-      console.log('Signing in:', this.email, this.password);
-      this.closeModal();
-    },
-    signUp() {
+    async signUp() {
       if (this.password !== this.confirmPassword) {
-        alert("Passwords do not match!");
         return;
       }
-      console.log('Signing up:', this.email, this.password, this.username);
-      this.$emit('signup', {
-        email: this.email,
-        password: this.password,
-        username: this.username,
-      });
-      this.closeModal();
+      try {
+        const signupData = {
+          name: this.name,
+          email: this.email,
+          passwordHash: this.password,
+        };
+        await this.registerUser(signupData); 
+        this.$emit('signup-success');  
+        // this.closeModal();  
+      } catch (error) {
+        console.error('Sign Up Error:', error);
+      }
     },
     handleGoogleAuth() {
       console.log('Signing in with Google...');
+      window.location.href = 'http://localhost:5207/api/User/google';
       this.closeModal();
-    }
-  }
+    },
+    
+  },
+
+  
 };
 </script>
   
@@ -179,7 +215,7 @@ export default {
     padding: 10px;
     border: none;
     border-radius: 5px;
-    background-color: #000; /* Black for Sign In */
+    background-color: #000; 
     color: white;
     cursor: pointer;
     transition: background 0.3s;

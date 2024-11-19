@@ -1,90 +1,133 @@
 <template>
-    <div class="archived-notes-page">
-      <div class="header">
-        <h2>Archived</h2>
-      </div>
-  
-      <div class="notes-row">
-        <div
-          v-for="note in filteredArchivedNotes"
-          :key="note.id"
-          class="note"
+  <div class="archived-notes-page">
+    <div class="header">
+      <h2>Archived</h2>
+    </div>
+
+    <div class="notes-row">
+      <div
+        v-for="note in archivedNotes"
+        :key="note.noteId"
+        class="note"
+      >
+        <!-- <span
+          class="category-label"
+          :style="{ backgroundColor: getCategoryColor(note.category) }"
         >
-          <span
-            class="category-label"
-            :style="{ backgroundColor: getCategoryColor(note.category) }"
-          >
-            {{ note.category }}
-          </span>
-          <h3>{{ note.title }}</h3>
-          <p>{{ note.description }}</p>
-          <p class="date">{{ note.date }}</p>
-          <div class="actions">
-            <button @click="viewNote(note.id)">
-              <i class="fas fa-file-alt"></i>
-            </button>
-            <button @click="restoreNote(note.id)">
-              <i class="fas fa-undo"></i>
-            </button>
-          </div>
+          {{ note.category }}
+        </span> -->
+        <h3>{{ note.title }}</h3>
+        <div v-if="note.password">
+          <p v-if="note.password" class="locked-message1">This note is locked.</p>
+        </div>
+        <div v-else>
+          <p class="content">{{ previewContent(note.content) }}</p>
+        </div>
+        <p class="date">{{ formatDate(note.createdAt) }}</p>
+        <div class="actions">
+          <button @click="handleNoteAction(note)">
+            <i :class="note.password ? 'fas fa-eye' : 'fas fa-file-alt'"></i>
+          </button>
+          <button @click="restoreNote(note.noteId)">
+            <i class="fas fa-undo"></i>
+          </button>
         </div>
       </div>
+      <PasswordModal
+      v-if="showPasswordModal"
+      :show="showPasswordModal"
+      :currentNote="currentNote"
+      @close-modal="closePasswordModal"
+      @unlock-success="handleUnlockSuccess"
+    />
     </div>
-  </template>
-  
-  
-  
-  <script>
-  export default {
-    data() {
-      return {
-        searchQuery: '',
-        activeFilter: 'ALL',
-        filters: ['ALL', 'PERSONAL', 'HOME', 'BUSINESS'],
-        archivedNotes: [
-          { id: 1, title: 'Finish the task on the board', description: 'Remember to finish...', date: '22.01.2023', category: 'Business', archived: true },
-          { id: 2, title: 'Buy a new tea cup', description: 'Remember to buy a...', date: '21.01.2023', category: 'Home', archived: true },
-          { id: 3, title: 'Hang out with Marry', description: 'Hang out with Marry, Friday...', date: '20.01.2023', category: 'Personal', archived: true },
-          // Add more archived notes here
-        ],
-      };
+  </div>
+</template>
+
+<script>
+import PasswordModal from '../components/UnlockNote.vue';  
+import { getUserIdFromToken } from '@/utils/authUtils';
+
+export default {
+  components: {
+    PasswordModal,
+  },
+  data() {
+    return {
+      archivedNotes: [], 
+      showPasswordModal: false,
+      currentNote: null,
+    };
+  },
+  methods: {
+  async fetchArchivedNotes() {
+    try {
+      const userId = getUserIdFromToken();
+      this.archivedNotes = await this.$store.dispatch('note/fetchArchivedNotesByUserId', userId);
+      console.log('Fetched Archived Notes:', this.archivedNotes); 
+    } catch (error) {
+      console.error('Error fetching archived notes:', error.message);
+    }
+  },
+
+  handleNoteAction(note) {
+      if (note.password) {
+        this.openPasswordModal(note);
+      } else {
+        this.navigateToNotePage(note.noteId);
+      }
     },
-    computed: {
-      filteredArchivedNotes() {
-        return this.archivedNotes.filter(note => {
-          const matchesSearch = note.title.toLowerCase().includes(this.searchQuery.toLowerCase());
-          const matchesCategory = this.activeFilter === 'ALL' || note.category === this.activeFilter;
-          return matchesSearch && matchesCategory;
-        });
-      },
+    openPasswordModal(note) {
+      this.currentNote = note;
+      console.log(this.currentNote);
+      this.showPasswordModal = true;
     },
-    methods: {
-      viewNote(id) {
-        const note = this.archivedNotes.find(note => note.id === id);
-        if (note) {
-          alert(`Viewing note: ${note.title}\n${note.description}`);
-        }
-      },
-      restoreNote(id) {
-        const note = this.archivedNotes.find(note => note.id === id);
-        if (note) {
-          alert(`Restoring note: ${note.title}`);
-          note.archived = false;
-        }
-      },
-      getCategoryColor(category) {
-        const categoryColors = {
-          Business: '#4CAF50',
-          Home: '#FF9800',
-          Personal: '#2196F3',
-        };
-        return categoryColors[category] || '#999';
-      },
+    closePasswordModal() {
+      this.showPasswordModal = false;
+      this.selectedNote = null;
     },
-  };
-  </script>
+    handleUnlockSuccess(response) {
+      this.currentNote = response;
+      console.log(response);
+      this.navigateToNotePage(this.currentNote.noteId);
+    },
+    navigateToNotePage(id) {
+      this.$router.push({ name: 'NoteCreation', params: { id } });
+    },
   
-  <style scoped>
+  formatDate(date) {
+    const parsedDate = new Date(date);
+    return parsedDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })},
+
+    previewContent(content) {
+    const maxLength = 100; 
+    if (content.length > maxLength) {
+      return content.slice(0, maxLength) + '...';
+    }
+    return content;
+  },
+
+  getCategoryColor(category) {
+    const categoryColors = {
+      Business: '#4CAF50',
+      Home: '#FF9800',
+      Personal: '#2196F3',
+    };
+    return categoryColors[category] || '#999';
+  },
+},
+
+mounted() {
+  this.fetchArchivedNotes(); 
+} }
+</script>
+
+<style scoped>
 .archived-notes-page {
   width: 75%;
   margin: 2%;
@@ -96,7 +139,7 @@
   display: flex;
   justify-content: space-between;
   margin-bottom: 20px;
-  color:white;
+  color: white;
 }
 
 .notes-row {
@@ -128,7 +171,7 @@
 }
 
 .note p {
-  color:white;
+  color: white;
 }
 
 .category-label {

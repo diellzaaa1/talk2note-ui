@@ -1,80 +1,94 @@
 <template>
-    <div class="locked-notes-page">
-      <div class="header">
-        <h2>Locked </h2>
-      </div>
-  
-      <div class="notes-row">
-        <div
-          v-for="note in filteredArchivedNotes"
-          :key="note.id"
-          :class="['note', { 'locked-note': note.isLocked }]"
-        >
-          <h3>{{ note.title }}</h3>
-          
-          <div v-if="note.isLocked" class="locked-message">
-            <i class="fas fa-lock"></i> locked
-          </div>
-  
-          <div v-else>
-            <p>{{ note.description }}</p>
-            <p class="date">{{ note.date }}</p>
-          </div>
-  
-          <div class="actions">
-            <button @click="viewNote(note)">
-              <i :class="note.isLocked ? 'fas fa-unlock' : 'fas fa-eye'"></i>
-              {{ note.isLocked ? 'Unlock' : 'View' }}
-            </button>
-          </div>
+  <div class="locked-notes-page">
+    <div class="header">
+      <h2>Locked Notes</h2>
+    </div>
+
+    <div class="notes-row">
+      <div
+        v-for="note in lockedNotes"
+        :key="note.id"
+        :class="['note', { 'locked-note': note.isLocked }]"
+      >
+        <h3>{{ note.title }}</h3>
+
+        <div v-if="note.password" class="locked-message">
+          <i class="fas fa-lock"></i> Locked
+        </div>
+
+        <div v-else>
+          <p>{{ note.description }}</p>
+          <p class="date">{{ note.date }}</p>
+        </div>
+
+        <div class="actions">
+          <button @click="viewNote(note)">
+            <i :class="note.isLocked ? 'fas fa-unlock' : 'fas fa-eye'"></i>
+            {{ note.password ? 'Unlock' : 'View' }}
+          </button>
         </div>
       </div>
     </div>
-  </template>
-  
-  <script>
-  export default {
-    data() {
-      return {
-        searchQuery: '',
-        activeFilter: 'ALL',
-        filters: ['ALL', 'PERSONAL', 'HOME', 'BUSINESS'],
-        archivedNotes: [
-          { id: 1, title: 'Finish the task on the board', description: 'Remember to finish...', date: '22.01.2023', category: 'Business', archived: true, isLocked: true },
-          { id: 2, title: 'Buy a new tea cup', description: 'Remember to buy a...', date: '21.01.2023', category: 'Home', archived: true, isLocked: true },
-          { id: 3, title: 'Hang out with Marry', description: 'Hang out with Marry, Friday...', date: '20.01.2023', category: 'Personal', archived: true, isLocked: true },
-        ],
-      };
+
+    <PasswordModal
+      :show="showPasswordModal"
+      :currentNote="currentNote"
+      @unlock-success="handleUnlockSuccess"
+      @close-modal="closeModal"
+    />
+  </div>
+</template>
+
+<script>
+import PasswordModal from '../components/UnlockNote.vue';
+import { getUserIdFromToken } from '@/utils/authUtils';
+
+export default {
+  components: {
+    PasswordModal,
+  },
+  data() {
+    return {
+      lockedNotes: [],
+      showPasswordModal: false,
+      currentNote: null,
+    };
+  },
+  methods: {
+    async fetchLockedNotes() {
+      try {
+        const userId = getUserIdFromToken();
+        this.lockedNotes = await this.$store.dispatch(
+          'note/fetchLockedNotesByUserId',
+          userId
+        );
+        console.log('Fetched Locked Notes:', this.lockedNotes);
+      } catch (error) {
+        console.error('Error fetching locked notes:', error.message);
+      }
     },
-    computed: {
-      filteredArchivedNotes() {
-        return this.archivedNotes.filter(note => {
-          const matchesSearch = note.title.toLowerCase().includes(this.searchQuery.toLowerCase());
-          const matchesCategory = this.activeFilter === 'ALL' || note.category === this.activeFilter;
-          return matchesSearch && matchesCategory;
-        });
-      },
+    viewNote(note) {
+      this.currentNote = note;
+      this.showPasswordModal = true;
     },
-    methods: {
-      viewNote(note) {
-        if (note.isLocked) {
-          this.promptPassword(note);
-        } else {
-          alert(`Viewing note: ${note.title}\n${note.description}`);
-        }
-      },
-      promptPassword(note) {
-        const password = prompt('Enter password to view this note:');
-        if (password === 'correctPassword') {
-          note.isLocked = false;
-          alert('Note unlocked!');
-        } else {
-          alert('Incorrect password.');
-        }
-      },
+    handleUnlockSuccess(response) {
+      console.log(response);
+      this.navigateToNotePage(this.currentNote.noteId);
     },
-  };
-  </script>
+    closeModal() {
+      this.showPasswordModal = false;
+      this.currentNote = null;
+    },
+    navigateToNotePage(id) {
+      this.$router.push({ name: 'NoteCreation', params: { id } });
+    },
+  },
+  mounted() {
+    this.fetchLockedNotes();
+  },
+};
+</script>
+
   
   <style scoped>
   .locked-notes-page {
@@ -144,12 +158,13 @@
   }
   
   .actions button:hover {
-    background: #007bff;
+    background: #b8c0bc;
+    color:black;
   }
   
   .locked-message {
     font-size: 1.2em;
-    color: #d52619;
+    color: #d05147;
     padding: 8px;
     background-color: rgba(213, 38, 25, 0.1);
     border-radius: 5px;
@@ -165,5 +180,6 @@
     color: #bbb;
     font-size: 0.8em;
   }
+ 
   </style>
   

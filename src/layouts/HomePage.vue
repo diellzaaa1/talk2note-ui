@@ -5,8 +5,8 @@
       :visible="isModalVisible" 
       :isSignIn="isSignIn" 
       @close-modal="handleCloseModal" 
-      @signup="handleSignUp"
-      @toggle-mode="toggleModalMode"  
+      @toggle-mode="toggleMode"
+      @signup-success="switchToSignIn"
     />
     <div class="content">
       <div class="text-content">
@@ -52,12 +52,16 @@ export default {
     openModal() {
       this.isModalVisible = true;
     },
-    handleSignUp(signUpData) {
-      console.log('Sign Up Data:', signUpData);
-    },
-    toggleModalMode() {
-      this.isSignIn = !this.isSignIn; 
+
+    toggleMode() {
+  console.log('Toggling mode...');
+  this.isSignIn = !this.isSignIn;
+  console.log('New isSignIn value:', this.isSignIn);
+},
+switchToSignIn() {
+      this.isSignIn = true; 
     }
+
   },
 };
 </script>

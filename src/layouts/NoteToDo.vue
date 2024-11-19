@@ -5,9 +5,12 @@
         <input v-model="searchQuery" placeholder="Search tasks..." class="search-bar" />
         <div class="filter-options">
           <select @change="applyFilter($event)" class="filter-dropdown">
-            <option value="Done">Show Done</option>
-            <option value="To Do">Show To Do</option>
-          </select>
+          <option value="">Select Status</option>
+          <option value="Done">Show Done</option>
+          <option value="To Do">Show To Do</option>
+          <option value="Overdue">Show Overdue</option>
+        </select>
+
           <button @click="clearFilters" class="filter-button">Clear Filter</button>
         </div>
       </div>
@@ -29,98 +32,181 @@
     </div>
 
     <div v-for="(item, index) in filteredAndSortedItems" :key="index" class="table-row">
-      <div class="column task-column">{{ item.task }}</div>
+      <div class="column task-column">{{ item.title }}</div>
       <div class="column description-column">{{ item.description }}</div>
       <div class="column status-column">
-        <span :class="statusClass(item)">{{ item.status }}</span>
+       <span :class="statusClass(item)">
+  {{ getStatusText(item) }}
+</span>
+
+
       </div>
-      <div class="column due-date-column">{{ item.dueDate }}</div>
+      <div class="column due-date-column">{{ formatDate(item.dueDate) }}</div>
       <div class="column action-column">
         <button @click="toggleStatus(index)" class="action-icon done-icon">✓</button>
-        <button @click="openEditModal(index)" class="action-icon edit-icon">
+        <button @click="openEditModal(item)" class="action-icon edit-icon">
           <i class="fas fa-pen"></i>
         </button>
         <button @click="deleteTask(index)" class="action-icon delete-icon">❌</button>
       </div>
     </div>
     <EditTaskModal 
-      :isVisible="isEditModalVisible" 
-      :taskToEdit="taskToEdit" 
-      @close-modal="closeEditModal" 
-      @save-task="saveTask"
+      :isVisible="isEditModalVisible"
+        :taskToEdit="taskToEdit"
+        @close-modal="closeEditModal"
+        @save-task="saveTask"
     />
   </div>
 </template>
+
 <script>
-import EditTaskModal from '../components/taskEdit.vue'; 
+import EditTaskModal from '../components/taskEdit.vue';
+import { getUserIdFromToken } from '@/utils/authUtils';
 
 export default {
   components: {
-    EditTaskModal
+    EditTaskModal,
   },
   data() {
     return {
+      todayDate: new Date().toISOString().slice(0, 10), 
       searchQuery: '',
       newTask: '',
       newDescription: '',
       newDueDate: '',
-      items: [
-        { id: 1, task: 'Task 1', description: 'Description 1', status: 'Done', dueDate: '2022-01-31', checked: false },
-        { id: 2, task: 'Task 2', description: 'Description 2', status: 'To Do', dueDate: '2022-02-28', checked: false }
-      ],
-      filteredItems: [],
+      filteredItems: [], 
       isEditModalVisible: false,
-      taskToEdit: {} 
+      taskToEdit: {},
     };
-  },
-  mounted() {
-    this.filteredItems = this.items;
   },
   computed: {
     filteredAndSortedItems() {
-      return this.filteredItems.filter(item =>
-        item.task.toLowerCase().includes(this.searchQuery.toLowerCase())
+      return (this.filteredItems || []).filter(item =>
+        item.title.toLowerCase().includes(this.searchQuery.toLowerCase())
       );
-    }
+    },
+    userId() {
+      return getUserIdFromToken();
+    },
   },
   methods: {
-    applyFilter(event) {
-      const status = event.target.value;
-      if (status) {
-        this.filteredItems = this.items.filter(item => item.status === status);
+    async fetchTasks() {
+      try {
+        const tasks = await this.$store.dispatch('noteToDo/fetchNoteToDosByUserId', this.userId);
+        this.filteredItems = tasks || [];
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+        this.filteredItems = []; 
       }
     },
+    applyFilter(event) {
+  const status = event.target.value;
+  if (status) {
+    if (status === 'Done') {
+      this.filteredItems = this.filteredItems.filter(item => item.isCompleted === true);
+    } else if (status === 'To Do') {
+      this.filteredItems = this.filteredItems.filter(item => item.isCompleted === false && this.todayDate < item.dueDate);
+    } else if (status === 'Overdue') {
+      this.filteredItems = this.filteredItems.filter(item => !item.isCompleted && this.todayDate > item.dueDate);
+    }
+  }
+},
+
     clearFilters() {
-      this.filteredItems = this.items;
+      this.fetchTasks();
       this.searchQuery = '';
     },
-    toggleStatus(index) {
-      const item = this.filteredItems[index];
-      item.status = item.status === 'Done' ? 'To Do' : 'Done';
+    async addTask() {
+      if (!this.newTask || !this.newDescription || !this.newDueDate) {
+        alert('Please fill in all fields.');
+        return;
+      }
+
+      const newTask = {
+        title: this.newTask,
+        description: this.newDescription,
+        dueDate: this.newDueDate,
+        userId: this.userId,
+      };
+
+      try {
+        await this.$store.dispatch('noteToDo/createNoteToDo', newTask);
+        this.fetchTasks();
+        this.newTask = '';
+        this.newDescription = '';
+        this.newDueDate = '';
+      } catch (error) {
+        console.error('Error adding task:', error);
+      }
+    },
+    async deleteTask(index) {
+      const task = this.filteredItems[index];
+      try {
+        await this.$store.dispatch('noteToDo/deleteNoteToDo', task.id);
+        this.fetchTasks();
+      } catch (error) {
+        console.error('Error deleting task:', error);
+      }
+    },
+    async toggleStatus(index) {
+      const task = this.filteredItems[index]; 
+      const isCompleted = true; 
+
+      try {
+        await this.$store.dispatch('noteToDo/updateCompletionStatus', {
+          id: task.id,        
+          isCompleted,
+        });
+        this.fetchTasks();
+      } catch (error) {
+        console.error('Error toggling task status:', error);
+      }
     },
     openEditModal(item) {
       this.isEditModalVisible = true;
-      this.taskToEdit = { ...item }; 
+      this.taskToEdit = { ...item };
     },
     closeEditModal() {
       this.isEditModalVisible = false;
-      this.taskToEdit = {}; 
+      this.taskToEdit = {};
     },
-    saveTask(updatedTask) {
-      const taskIndex = this.filteredItems.findIndex(task => task.id === updatedTask.id);
-      if (taskIndex !== -1) {
-        this.$set(this.filteredItems, taskIndex, updatedTask); 
-        this.closeEditModal(); 
+    async saveTask(updatedTask) {
+      try {
+        await this.$store.dispatch('noteToDo/updateNoteToDo', updatedTask);
+        this.fetchTasks();  
+        this.closeEditModal();
+      } catch (error) {
+        console.error('Error saving task:', error);
       }
     },
-    deleteTask(index) {
-      this.items.splice(index, 1);
-    },
-    statusClass(item) {
-      const today = new Date().toISOString().slice(0, 10);
-      return item.status === 'Done' ? 'status-done' : (item.dueDate < today ? 'status-overdue' : 'status-to-do');
+    getStatusText(item) {
+    if (item.isCompleted) {
+      return 'Done'; 
+    } else if (this.todayDate > item.dueDate) {
+      return 'Overdue'; 
+    } else {
+      return 'To Do'; 
     }
-  }
+  },
+
+  statusClass(item) {
+    if (item.isCompleted) {
+      return 'status-done'; 
+    } else if (this.todayDate > item.dueDate) {
+      return 'status-overdue';
+    } else {
+      return 'status-to-do';
+    }
+  },
+    formatDate(date) {
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      const formattedDate = new Date(date).toLocaleDateString('en-GB', options);
+      return formattedDate;
+    },
+  },
+  mounted() {
+    this.fetchTasks();
+  },
 };
 </script>
 
@@ -253,16 +339,17 @@ export default {
 }
 
 .status-done {
-  color: #28a745;
-}
-
-.status-to-do {
-  color: #007bff;
+  color: #28a745; 
 }
 
 .status-overdue {
-  color: #dc3545;
+  color: red; 
 }
+
+.status-to-do {
+  color: #40a0ff; 
+}
+
 
 .done-icon {
   color: #28a745;
